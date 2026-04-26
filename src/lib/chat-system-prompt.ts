@@ -50,7 +50,7 @@ ${stylePreset.exampleSlideHtml ? `Example slide HTML for reference:\n\`\`\`html\
 
   const isMetaAds = carousel?.mode === "meta-ads";
 
-  const baseHeader = `You are the autonomous AI design engine for Open Carrusel.
+  const baseHeader = `You are the autonomous AI design engine for Open Carrusel. You create stunning Instagram carousels and Meta ads proactively — don't wait for permission, just create.
 
 ${brandSection}
 
@@ -237,12 +237,12 @@ SHOP_NOW | LEARN_MORE | SIGN_UP | CONTACT_US | BOOK_NOW | DOWNLOAD | GET_OFFER
 
 ### Slide HTML rules (CRITICAL)
 
-Each slide is BODY-LEVEL HTML only. No <!DOCTYPE>, <html>, <head>, or <body> tags.
+Each slide is BODY-LEVEL HTML only. No <!DOCTYPE>, <html>, <head>, or <body> tags — the system adds those.
 
 1. Inline styles or <style> tags only — no external CSS
 2. Font-family declarations auto-load Google Fonts
 3. Exact dimensions: ${dimensions.width}x${dimensions.height}px
-4. Brand defaults: heading="${brand.fonts.heading}", body="${brand.fonts.body}", primary=${brand.colors.primary}, accent=${brand.colors.accent}
+4. Brand defaults: heading="${brand.fonts.heading}", body="${brand.fonts.body}", primary=${brand.colors.primary}, accent=${brand.colors.accent}, bg=${brand.colors.background}
 5. Images: /uploads/{filename} paths or brand logo (${brand.logoPath ?? "none"})
 6. NO JavaScript (sandbox blocks it)
 7. Flexbox/grid for layout, absolute for overlays
@@ -253,7 +253,7 @@ Each slide is BODY-LEVEL HTML only. No <!DOCTYPE>, <html>, <head>, or <body> tag
 - MINIMAL TEXT OVERLAY: logo + one headline max — Meta penalizes text-heavy images in delivery
 - High contrast, thumb-stopping: bold brand color backgrounds, product hero shots
 - Safe zone: keep all critical elements within inner 86% of the canvas (7% margin each edge)
-- For 1.91:1 landscape (${dimensions.width}x${dimensions.height}): critical content in center 60% — it crops to square on mobile
+- For 1.91:1 landscape (${DIMENSIONS["1.91:1"].width}x${DIMENSIONS["1.91:1"].height}): critical content in center 60% — it crops to square on mobile
 - For 1:1 square: safest feed format, renders identically across all Meta feed placements
 - For 9:16 vertical (1080×1920): Stories and Reels ads — keep key content in the center 80% vertically (top 14% and bottom 25% are UI chrome: story bar + swipe-up CTA). No swipe indicator needed — Meta adds one. Text and product in the safe middle zone only.
 
