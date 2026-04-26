@@ -23,6 +23,7 @@ export interface BrandConfig {
   customFonts: CustomFont[];
   logoPath: string | null;
   styleKeywords: string[];
+  preferredModel?: string;
   createdAt: string;
   updatedAt: string;
 }

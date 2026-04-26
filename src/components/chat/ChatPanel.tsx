@@ -6,6 +6,7 @@ import { ChatInput, type PendingImage } from "./ChatInput";
 import { ReferenceImages } from "./ReferenceImages";
 import { AlertCircle, Plug } from "lucide-react";
 import type { ReferenceImage } from "@/types/carousel";
+import type { ClaudeModel } from "@/app/api/models/route";
 
 interface Message {
   id: string;
@@ -36,6 +37,8 @@ export function ChatPanel({
   const [error, setError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
+  const [models, setModels] = useState<ClaudeModel[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -50,6 +53,22 @@ export function ChatPanel({
       // ignore corrupted data
     }
   }, [carouselId]);
+
+  // Fetch available models from the CLI and restore last selection from brand config
+  useEffect(() => {
+    Promise.all([
+      fetch("/api/models").then((r) => r.json()),
+      fetch("/api/brand").then((r) => r.json()),
+    ])
+      .then(([modelData, brandData]: [ClaudeModel[], { preferredModel?: string }]) => {
+        if (!Array.isArray(modelData) || modelData.length === 0) return;
+        setModels(modelData);
+        const saved = brandData?.preferredModel;
+        const isValid = saved && modelData.some((m) => m.id === saved);
+        setSelectedModel(isValid ? saved! : modelData[0].id);
+      })
+      .catch(() => {});
+  }, []);
 
   // Persist messages to localStorage
   const persistMessages = useCallback(
@@ -69,6 +88,16 @@ export function ChatPanel({
     localStorage.removeItem(`chat-messages-${carouselId}`);
     localStorage.removeItem(`chat-session-${carouselId}`);
   }, [carouselId]);
+
+  const handleModelChange = useCallback((id: string) => {
+    setSelectedModel(id);
+    // Persist permanently to server-side brand config
+    fetch("/api/brand", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ preferredModel: id }),
+    }).catch(() => {});
+  }, []);
 
   const handleStopGenerating = useCallback(() => {
     abortRef.current?.abort();
@@ -134,6 +163,7 @@ export function ChatPanel({
             message: aiMessage,
             sessionId,
             carouselId,
+            ...(selectedModel ? { model: selectedModel } : {}),
           }),
           signal: abortRef.current.signal,
         });
@@ -182,6 +212,13 @@ export function ChatPanel({
                         : m
                     )
                   );
+                } else if (data.type === "cost" && typeof data.costUsd === "number") {
+                  // Persist cost delta to carousel (fire-and-forget)
+                  fetch(`/api/carousels/${carouselId}`, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ addCostUsd: data.costUsd }),
+                  }).catch(() => {});
                 }
               } catch {
                 // skip unparseable
@@ -248,7 +285,7 @@ export function ChatPanel({
         onStreamEnd?.();
       }
     },
-    [isStreaming, sessionId, carouselId, pendingImages, onStreamStart, onStreamEnd, persistMessages]
+    [isStreaming, sessionId, carouselId, pendingImages, selectedModel, onStreamStart, onStreamEnd, persistMessages]
   );
 
   // Upload images: file → /api/upload → /api/media (global library)
@@ -336,21 +373,38 @@ export function ChatPanel({
 
   return (
     <div className="h-full flex flex-col">
-      <div className="px-4 py-3 border-b border-border flex items-start justify-between">
-        <div>
+      <div className="px-4 py-3 border-b border-border flex items-start justify-between gap-2">
+        <div className="min-w-0">
           <h2 className="text-sm font-semibold">AI Assistant</h2>
           <p className="text-xs text-muted-foreground">
             Describe the carousel you want to create
           </p>
         </div>
-        {messages.length > 0 && (
-          <button
-            onClick={handleClearChat}
-            className="text-[10px] text-muted-foreground hover:text-destructive transition-colors px-1.5 py-0.5 rounded"
-          >
-            Clear
-          </button>
-        )}
+        <div className="flex items-center gap-1 shrink-0">
+          {models.length > 0 && (
+            <select
+              value={selectedModel}
+              onChange={(e) => handleModelChange(e.target.value)}
+              disabled={isStreaming}
+              className="text-[10px] bg-muted text-muted-foreground border border-border rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50 cursor-pointer"
+              aria-label="Select AI model"
+            >
+              {models.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+          )}
+          {messages.length > 0 && (
+            <button
+              onClick={handleClearChat}
+              className="text-[10px] text-muted-foreground hover:text-destructive transition-colors px-1.5 py-0.5 rounded"
+            >
+              Clear
+            </button>
+          )}
+        </div>
       </div>
 
       <ReferenceImages

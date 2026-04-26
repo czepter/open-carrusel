@@ -27,6 +27,7 @@ export async function POST(request: NextRequest) {
     sessionId?: string;
     carouselId?: string;
     stylePresetId?: string;
+    model?: string;
   };
   try {
     body = await request.json();
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { message, sessionId, carouselId, stylePresetId } = body;
+  const { message, sessionId, carouselId, stylePresetId, model } = body;
 
   if (
     !message ||
@@ -74,6 +75,10 @@ export async function POST(request: NextRequest) {
     "--name",
     "carrusel-chat",
   ];
+
+  if (model && typeof model === "string" && model.trim()) {
+    args.push("--model", model.trim());
+  }
 
   if (sessionId) {
     args.push("--resume", sessionId);
@@ -284,7 +289,7 @@ function handleEvent(
     return;
   }
 
-  // Extract result with session ID
+  // Extract result with session ID and cost
   if (event.type === "result") {
     if (event.session_id) {
       onSessionId(event.session_id as string);
@@ -293,6 +298,14 @@ function handleEvent(
       controller.enqueue(
         encoder.encode(
           `data: ${JSON.stringify({ type: "result", text: event.result })}\n\n`
+        )
+      );
+    }
+    // Forward cost data so the client can persist it
+    if (typeof event.cost_usd === "number") {
+      controller.enqueue(
+        encoder.encode(
+          `data: ${JSON.stringify({ type: "cost", costUsd: event.cost_usd })}\n\n`
         )
       );
     }
