@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef, use } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Trash2, Grid3X3, Bookmark, Maximize2 } from "lucide-react";
+import { Trash2, Grid3X3, Bookmark, BookmarkCheck, Maximize2, Type } from "lucide-react";
 import { TopBar } from "@/components/layout/TopBar";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -13,9 +13,12 @@ import { SlideFilmstrip } from "@/components/editor/SlideFilmstrip";
 import { AspectRatioSelector } from "@/components/editor/AspectRatioSelector";
 import { ExportButton } from "@/components/editor/ExportButton";
 import { CaptionPanel } from "@/components/editor/CaptionPanel";
+import { AdCopyPanel } from "@/components/editor/AdCopyPanel";
 import { SafeZoneOverlay } from "@/components/editor/SafeZoneOverlay";
 import { FullscreenPreview } from "@/components/editor/FullscreenPreview";
-import type { Carousel, AspectRatio } from "@/types/carousel";
+import { FontSettingsPanel } from "@/components/editor/FontSettingsPanel";
+import type { Carousel, AspectRatio, CarouselFontSettings } from "@/types/carousel";
+import { DEFAULT_FONT_SETTINGS } from "@/types/carousel";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -29,9 +32,24 @@ export default function CarouselEditorPage({ params }: PageProps) {
   const [activeSlide, setActiveSlide] = useState(0);
   const [claudeAvailable, setClaudeAvailable] = useState(true);
   const [chatOpen, setChatOpen] = useState(true);
+  const [fontPanelOpen, setFontPanelOpen] = useState(true);
+  // fontSettings lives here (not inside carousel) for instant local updates
+  const [fontSettings, setFontSettings] = useState<CarouselFontSettings | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [showSafeZones, setShowSafeZones] = useState(false);
   const [showFullscreen, setShowFullscreen] = useState(false);
+  const [templateSaved, setTemplateSaved] = useState(false);
+  const [templateSaving, setTemplateSaving] = useState(false);
+
+  // Debounce ref for saving fontSettings to the API
+  const fontSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clear debounce timer on unmount to avoid stale API calls
+  useEffect(() => {
+    return () => {
+      if (fontSaveTimer.current) clearTimeout(fontSaveTimer.current);
+    };
+  }, []);
 
   // Confirm dialog state
   const [confirmState, setConfirmState] = useState<{
@@ -70,7 +88,7 @@ export default function CarouselEditorPage({ params }: PageProps) {
     }
   }, [id]);
 
-  // Initial data load
+  // Initial data load — also seed fontSettings from carousel or brand config
   useEffect(() => {
     const load = async () => {
       await fetchCarousel();
@@ -84,6 +102,26 @@ export default function CarouselEditorPage({ params }: PageProps) {
     };
     load();
   }, [fetchCarousel]);
+
+  // Once carousel loads, initialise fontSettings if not already set
+  useEffect(() => {
+    if (!carousel || fontSettings !== null) return;
+    if (carousel.fontSettings) {
+      setFontSettings(carousel.fontSettings);
+    } else {
+      // Seed defaults from brand config
+      fetch("/api/brand")
+        .then((r) => r.json())
+        .then((brand) => {
+          setFontSettings({
+            ...DEFAULT_FONT_SETTINGS,
+            headingFamily: brand?.fonts?.heading ?? DEFAULT_FONT_SETTINGS.headingFamily,
+            bodyFamily: brand?.fonts?.body ?? DEFAULT_FONT_SETTINGS.bodyFamily,
+          });
+        })
+        .catch(() => setFontSettings(DEFAULT_FONT_SETTINGS));
+    }
+  }, [carousel, fontSettings]);
 
   // Poll for carousel updates while AI is generating slides
   useEffect(() => {
@@ -172,6 +210,22 @@ export default function CarouselEditorPage({ params }: PageProps) {
     }, 100);
   }, []);
 
+  // Update fontSettings locally (instant preview) and debounce-save to API
+  const handleFontSettingsChange = useCallback(
+    (settings: CarouselFontSettings) => {
+      setFontSettings(settings);
+      if (fontSaveTimer.current) clearTimeout(fontSaveTimer.current);
+      fontSaveTimer.current = setTimeout(async () => {
+        await fetch(`/api/carousels/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fontSettings: settings }),
+        });
+      }, 600);
+    },
+    [id]
+  );
+
   if (notFound) {
     return (
       <div className="h-full flex flex-col items-center justify-center gap-4">
@@ -200,6 +254,7 @@ export default function CarouselEditorPage({ params }: PageProps) {
         title={carousel.name}
         showBack
         editable
+        costUsd={carousel.costUsd}
         onTitleChange={async (name) => {
           const res = await fetch(`/api/carousels/${id}`, {
             method: "PUT",
@@ -221,6 +276,7 @@ export default function CarouselEditorPage({ params }: PageProps) {
         aspectRatio={carousel.aspectRatio}
         activeIndex={activeSlide}
         onActiveChange={setActiveSlide}
+        fontSettings={fontSettings ?? undefined}
       />
 
       {/* Confirm dialog */}
@@ -238,7 +294,7 @@ export default function CarouselEditorPage({ params }: PageProps) {
       <div className="flex-1 flex min-h-0 overflow-hidden">
         {/* Chat panel */}
         {chatOpen && (
-          <div className="oc-fade w-80 border-r border-border shrink-0 flex flex-col bg-surface">
+          <div className="oc-fade w-[520px] border-r border-border shrink-0 flex flex-col bg-surface">
             <ChatPanel
               carouselId={id}
               claudeAvailable={claudeAvailable}
@@ -250,13 +306,17 @@ export default function CarouselEditorPage({ params }: PageProps) {
           </div>
         )}
 
-        {/* Right side: toolbar + preview */}
+        {/* Center + right sidebar */}
+        <div className="flex-1 flex min-w-0 min-h-0">
+
+        {/* Center: toolbar + preview + caption */}
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
           {/* Toolbar */}
-          <div className="h-11 border-b border-border bg-surface flex items-center px-4 gap-3 shrink-0">
+          <div className="h-[60px] border-b border-border bg-surface flex items-center px-4 gap-3 shrink-0">
             <AspectRatioSelector
               value={carousel.aspectRatio}
               onChange={handleAspectChange}
+              showLandscape={carousel.mode === "meta-ads"}
             />
             <div className="flex-1" />
             <Button
@@ -280,20 +340,38 @@ export default function CarouselEditorPage({ params }: PageProps) {
               <Grid3X3 className="h-3.5 w-3.5" />
             </Button>
             <Button
-              variant="ghost"
+              variant={templateSaved ? "outline" : "ghost"}
               size="sm"
+              disabled={templateSaving}
               onClick={async () => {
-                await fetch("/api/templates", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ carouselId: carousel.id }),
-                });
+                setTemplateSaving(true);
+                try {
+                  const res = await fetch("/api/templates", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ carouselId: carousel.id }),
+                  });
+                  if (res.ok) {
+                    setTemplateSaved(true);
+                    setTimeout(() => setTemplateSaved(false), 2000);
+                  }
+                } finally {
+                  setTemplateSaving(false);
+                }
               }}
-              className="text-muted-foreground"
+              className={
+                templateSaved
+                  ? "border-accent text-accent"
+                  : "text-muted-foreground"
+              }
               aria-label="Save as template"
-              title="Save as template"
+              title={templateSaved ? "Template saved!" : "Save as template"}
             >
-              <Bookmark className="h-3.5 w-3.5" />
+              {templateSaved ? (
+                <BookmarkCheck className="h-3.5 w-3.5" />
+              ) : (
+                <Bookmark className="h-3.5 w-3.5" />
+              )}
             </Button>
             <Button
               variant="ghost"
@@ -310,6 +388,16 @@ export default function CarouselEditorPage({ params }: PageProps) {
             >
               {chatOpen ? "Hide Chat" : "Show Chat"}
             </button>
+            <Button
+              variant={fontPanelOpen ? "outline" : "ghost"}
+              size="sm"
+              onClick={() => setFontPanelOpen(!fontPanelOpen)}
+              className={fontPanelOpen ? "border-accent text-accent" : "text-muted-foreground"}
+              aria-label="Toggle typography panel"
+              title="Typography settings"
+            >
+              <Type className="h-3.5 w-3.5" />
+            </Button>
             <ExportButton
               carouselId={carousel.id}
               slideCount={carousel.slides.length}
@@ -323,14 +411,33 @@ export default function CarouselEditorPage({ params }: PageProps) {
             activeIndex={activeSlide}
             onActiveChange={setActiveSlide}
             showSafeZones={showSafeZones}
+            fontSettings={fontSettings ?? undefined}
           />
 
-          {/* Caption panel */}
-          <CaptionPanel
-            caption={carousel.caption}
-            hashtags={carousel.hashtags}
-          />
+          {/* Caption / Ad Copy panel */}
+          {carousel.mode === "meta-ads" ? (
+            <AdCopyPanel carousel={carousel} onUpdate={fetchCarousel} />
+          ) : (
+            <CaptionPanel
+              caption={carousel.caption}
+              hashtags={carousel.hashtags}
+            />
+          )}
         </div>
+
+          {/* Right sidebar: font settings */}
+          {fontPanelOpen && fontSettings && (
+            <div className="oc-fade w-[240px] shrink-0 border-l border-border">
+              <FontSettingsPanel
+                carouselId={id}
+                settings={fontSettings}
+                onChange={handleFontSettingsChange}
+                onApplyComplete={fetchCarousel}
+              />
+            </div>
+          )}
+
+        </div>{/* end center + right sidebar */}
       </div>
 
       {/* Filmstrip */}
