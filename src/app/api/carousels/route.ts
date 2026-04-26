@@ -28,7 +28,12 @@ export async function POST(request: Request) {
       ? (aspectRatio as AspectRatio)
       : "4:5";
 
-    const carousel = await createCarousel(name.trim(), ratio, mode || "organic");
+    const validModes: CarouselMode[] = ["organic", "meta-ads"];
+    const safeMode: CarouselMode = validModes.includes(mode as CarouselMode)
+      ? (mode as CarouselMode)
+      : "organic";
+
+    const carousel = await createCarousel(name.trim(), ratio, safeMode);
     return NextResponse.json(carousel, { status: 201 });
   } catch {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
