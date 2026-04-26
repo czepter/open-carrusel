@@ -1,9 +1,18 @@
-import { readDataSafe, writeData } from "./data";
+import { readDataSafe, writeData, modifyData } from "./data";
 import { generateId, now } from "./utils";
-import type { Carousel, CarouselsData, Slide, AspectRatio, ReferenceImage } from "@/types/carousel";
+import type { Carousel, CarouselsData, Slide, AspectRatio, ReferenceImage, CarouselMode } from "@/types/carousel";
 import { MAX_SLIDES, MAX_VERSIONS } from "@/types/carousel";
 
 const FILE = "carousels.json";
+
+// Applies defaults to carousels loaded from disk that predate the meta-ads mode.
+function applyDefaults(carousel: Carousel): Carousel {
+  const base: Omit<Carousel, "mode"> & { mode?: Carousel["mode"] } = carousel;
+  return {
+    mode: "organic",  // default for all old carousels
+    ...base,
+  };
+}
 
 async function load(): Promise<CarouselsData> {
   return readDataSafe<CarouselsData>(FILE, { carousels: [] });
@@ -15,17 +24,19 @@ async function save(data: CarouselsData): Promise<void> {
 
 export async function listCarousels(): Promise<Carousel[]> {
   const data = await load();
-  return data.carousels.filter((c) => !c.isTemplate);
+  return data.carousels.filter((c) => !c.isTemplate).map(applyDefaults);
 }
 
 export async function getCarousel(id: string): Promise<Carousel | null> {
   const data = await load();
-  return data.carousels.find((c) => c.id === id) ?? null;
+  const found = data.carousels.find((c) => c.id === id);
+  return found ? applyDefaults(found) : null;
 }
 
 export async function createCarousel(
   name: string,
-  aspectRatio: AspectRatio
+  aspectRatio: AspectRatio = "4:5",
+  mode: CarouselMode = "organic"
 ): Promise<Carousel> {
   const data = await load();
   const carousel: Carousel = {
@@ -37,6 +48,7 @@ export async function createCarousel(
     chatSessionId: null,
     isTemplate: false,
     tags: [],
+    mode,
     createdAt: now(),
     updatedAt: now(),
   };
@@ -47,14 +59,18 @@ export async function createCarousel(
 
 export async function updateCarousel(
   id: string,
-  updates: Partial<Pick<Carousel, "name" | "aspectRatio" | "tags" | "chatSessionId" | "caption" | "hashtags">>
+  updates: Partial<Pick<Carousel,
+    | "name" | "aspectRatio" | "tags" | "chatSessionId"
+    | "caption" | "hashtags" | "costUsd"
+    | "mode" | "adPrimaryText" | "adCta"
+  >>
 ): Promise<Carousel | null> {
   const data = await load();
   const idx = data.carousels.findIndex((c) => c.id === id);
   if (idx === -1) return null;
   Object.assign(data.carousels[idx], updates, { updatedAt: now() });
   await save(data);
-  return data.carousels[idx];
+  return applyDefaults(data.carousels[idx]);
 }
 
 export async function duplicateCarousel(id: string): Promise<Carousel | null> {
@@ -120,7 +136,7 @@ export async function addSlide(
 export async function updateSlide(
   carouselId: string,
   slideId: string,
-  updates: Partial<Pick<Slide, "html" | "notes">>
+  updates: Partial<Pick<Slide, "html" | "notes" | "adCopy">>
 ): Promise<Slide | null> {
   const data = await load();
   const carousel = data.carousels.find((c) => c.id === carouselId);
@@ -251,6 +267,24 @@ export async function removeReferenceImage(
   carousel.updatedAt = now();
   await save(data);
   return true;
+}
+
+// --- Cost tracking ---
+
+export async function addCost(
+  carouselId: string,
+  costUsd: number
+): Promise<boolean> {
+  let found = false;
+  await modifyData<CarouselsData>(FILE, { carousels: [] }, (data) => {
+    const carousel = data.carousels.find((c) => c.id === carouselId);
+    if (!carousel) return data;
+    found = true;
+    carousel.costUsd = (carousel.costUsd ?? 0) + costUsd;
+    carousel.updatedAt = now();
+    return data;
+  });
+  return found;
 }
 
 // --- Media library linking ---
