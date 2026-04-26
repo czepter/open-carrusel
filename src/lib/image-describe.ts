@@ -38,9 +38,9 @@ Be specific and use concrete design terminology. Write 3-5 sentences. Output ONL
     "--allowedTools",
     "Read",
     "--max-turns",
-    "2",
+    "3",
     "--max-budget-usd",
-    "0.05",
+    "0.50",
   ];
 
   const isWindowsShim =
@@ -66,11 +66,11 @@ Be specific and use concrete design terminology. Write 3-5 sentences. Output ONL
       stderr += chunk.toString();
     });
 
-    // Timeout: kill after 60 seconds
+    // Timeout: kill after 90 seconds (image reads can be slow)
     const timeout = setTimeout(() => {
       child.kill();
       reject(new Error("Claude CLI timed out describing image"));
-    }, 60_000);
+    }, 90_000);
 
     child.on("error", (err) => {
       clearTimeout(timeout);
@@ -80,29 +80,38 @@ Be specific and use concrete design terminology. Write 3-5 sentences. Output ONL
     child.on("exit", (code) => {
       clearTimeout(timeout);
 
+      // Parse stdout regardless of exit code — Claude CLI returns JSON
+      // even on budget errors, and may include a partial result
+      try {
+        const parsed = JSON.parse(stdout);
+
+        if (typeof parsed.result === "string" && parsed.result.trim()) {
+          resolve(parsed.result.trim());
+          return;
+        }
+
+        // Budget or other error with no result
+        if (parsed.is_error) {
+          const errors = Array.isArray(parsed.errors)
+            ? parsed.errors.join(", ")
+            : "unknown error";
+          reject(new Error(`Claude CLI: ${errors}`));
+          return;
+        }
+      } catch {
+        // Not valid JSON — fall through to code-based handling
+      }
+
       if (code !== 0) {
         reject(
           new Error(
-            `Claude CLI exited with code ${code}: ${stderr.slice(0, 500)}`
+            `Claude CLI exited with code ${code}: ${(stderr || stdout).slice(0, 500)}`
           )
         );
         return;
       }
 
-      try {
-        // Claude CLI --output-format json returns { result: "...", ... }
-        const parsed = JSON.parse(stdout);
-        const result =
-          typeof parsed.result === "string"
-            ? parsed.result
-            : typeof parsed === "string"
-              ? parsed
-              : "No description available.";
-        resolve(result.trim());
-      } catch {
-        // If not valid JSON, treat stdout as plain text
-        resolve(stdout.trim() || "No description available.");
-      }
+      resolve(stdout.trim() || "No description available.");
     });
   });
 }
