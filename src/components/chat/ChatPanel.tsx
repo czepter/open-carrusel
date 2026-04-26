@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { ChatMessage } from "./ChatMessage";
-import { ChatInput } from "./ChatInput";
+import { ChatInput, type PendingImage } from "./ChatInput";
 import { ReferenceImages } from "./ReferenceImages";
 import { AlertCircle, Plug } from "lucide-react";
 import type { ReferenceImage } from "@/types/carousel";
@@ -34,6 +34,8 @@ export function ChatPanel({
   const [isStreaming, setIsStreaming] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -80,17 +82,38 @@ export function ChatPanel({
   }, [messages]);
 
   const handleSend = useCallback(
-    async (message: string) => {
+    async (userText: string) => {
       if (isStreaming) return;
       setError(null);
       setIsStreaming(true);
       onStreamStart?.();
 
-      // Add user message
+      // Build the actual message sent to the AI:
+      // If there are pending images, prepend their URLs so the AI knows about them
+      const currentPending = pendingImages;
+      let aiMessage = userText;
+      if (currentPending.length > 0) {
+        const imageList = currentPending
+          .map((img) => `- "${img.name}" (${img.url})`)
+          .join("\n");
+        const prefix =
+          currentPending.length === 1
+            ? `[Uploaded image: "${currentPending[0].name}" at ${currentPending[0].url}]\n\n`
+            : `[Uploaded ${currentPending.length} images:\n${imageList}]\n\n`;
+        aiMessage = prefix + (userText || "Use these images as slide backgrounds.");
+        setPendingImages([]);
+      }
+
+      // Show user message in chat (clean text, no technical URLs)
+      const displayText =
+        userText ||
+        (currentPending.length === 1
+          ? `📷 ${currentPending[0].name}`
+          : `📷 ${currentPending.length} images`);
       const userMsg: Message = {
         id: crypto.randomUUID(),
         role: "user",
-        content: message,
+        content: displayText,
       };
       setMessages((prev) => [...prev, userMsg]);
 
@@ -108,7 +131,7 @@ export function ChatPanel({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            message,
+            message: aiMessage,
             sessionId,
             carouselId,
           }),
@@ -151,7 +174,7 @@ export function ChatPanel({
                     )
                   );
                 } else if (data.type === "result" && typeof data.text === "string") {
-                  accumulated = data.text; // result is the final complete text
+                  accumulated = data.text;
                   setMessages((prev) =>
                     prev.map((m) =>
                       m.id === assistantId
@@ -225,8 +248,71 @@ export function ChatPanel({
         onStreamEnd?.();
       }
     },
-    [isStreaming, sessionId, carouselId, onStreamStart, onStreamEnd, persistMessages]
+    [isStreaming, sessionId, carouselId, pendingImages, onStreamStart, onStreamEnd, persistMessages]
   );
+
+  // Upload images: file → /api/upload → /api/media (global library)
+  // + link to current carousel. Images appear as pending attachments.
+  const handleImageUpload = useCallback(
+    async (files: File[]) => {
+      setIsUploading(true);
+      try {
+        const results = await Promise.all(
+          files.map(async (file) => {
+            // 1. Upload file
+            const formData = new FormData();
+            formData.append("file", file);
+            const uploadRes = await fetch("/api/upload", {
+              method: "POST",
+              body: formData,
+            });
+            if (!uploadRes.ok) return null;
+            const uploadData = await uploadRes.json();
+
+            // 2. Add to global media library
+            const mediaRes = await fetch("/api/media", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                url: uploadData.url,
+                name: file.name,
+              }),
+            });
+            if (!mediaRes.ok) return null;
+            const mediaImage = await mediaRes.json();
+
+            // 3. Link to current carousel
+            await fetch(`/api/carousels/${carouselId}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                addMediaImageIds: [mediaImage.id],
+              }),
+            });
+
+            return { url: uploadData.url as string, name: file.name };
+          })
+        );
+
+        const uploaded = results.filter(Boolean) as PendingImage[];
+        if (uploaded.length === 0) {
+          setError("Failed to upload images");
+          return;
+        }
+
+        setPendingImages((prev) => [...prev, ...uploaded]);
+      } catch {
+        setError("Failed to upload images");
+      } finally {
+        setIsUploading(false);
+      }
+    },
+    [carouselId]
+  );
+
+  const handleRemovePendingImage = useCallback((url: string) => {
+    setPendingImages((prev) => prev.filter((img) => img.url !== url));
+  }, []);
 
   if (!claudeAvailable) {
     return (
@@ -307,6 +393,10 @@ export function ChatPanel({
         isStreaming={isStreaming}
         textareaRef={chatInputRef}
         onStop={handleStopGenerating}
+        onImageUpload={handleImageUpload}
+        isUploading={isUploading}
+        pendingImages={pendingImages}
+        onRemovePendingImage={handleRemovePendingImage}
       />
     </div>
   );

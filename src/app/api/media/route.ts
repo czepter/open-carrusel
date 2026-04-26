@@ -1,27 +1,18 @@
 import { NextResponse } from "next/server";
 import path from "path";
-import { addReferenceImage, removeReferenceImage, getCarousel } from "@/lib/carousels";
+import { listMediaImages, addMediaImage, deleteMediaImage } from "@/lib/media";
 import { generateId, now } from "@/lib/utils";
 import { describeImage } from "@/lib/image-describe";
 import { computeEmbedding } from "@/lib/vector-store";
 
-export async function GET(
-  _request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { id } = await params;
-  const carousel = await getCarousel(id);
-  if (!carousel) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-  return NextResponse.json({ references: carousel.referenceImages || [] });
+/** GET /api/media — list all images in the global media library */
+export async function GET() {
+  const images = await listMediaImages();
+  return NextResponse.json({ images });
 }
 
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { id } = await params;
+/** POST /api/media — add an uploaded image to the global media library */
+export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { url, name } = body as { url?: string; name?: string };
@@ -32,7 +23,7 @@ export async function POST(
 
     const absPath = path.resolve(process.cwd(), "public", url.replace(/^\//, ""));
 
-    // Generate verbal description via Claude vision + compute embedding
+    // Generate description + embedding (non-fatal)
     let description: string | undefined;
     let embedding: number[] | undefined;
     let embeddingVocab: string[] | undefined;
@@ -43,46 +34,37 @@ export async function POST(
       embedding = result.vector;
       embeddingVocab = result.vocab;
     } catch (err) {
-      // Non-fatal: store the image even if description generation fails
-      // (e.g. missing ANTHROPIC_API_KEY)
       console.warn("Failed to generate image description:", err);
     }
 
-    const ref = {
+    const image = {
       id: generateId(),
       url,
       absPath,
-      name: name || "Reference image",
-      addedAt: now(),
+      name: name || "Uploaded image",
+      uploadedAt: now(),
       description,
       embedding,
       embeddingVocab,
     };
 
-    const result = await addReferenceImage(id, ref);
-    if (!result) {
-      return NextResponse.json({ error: "Carousel not found" }, { status: 404 });
-    }
-
+    const result = await addMediaImage(image);
     return NextResponse.json(result, { status: 201 });
   } catch {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }
 }
 
-export async function DELETE(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { id } = await params;
+/** DELETE /api/media?id={imageId} — remove an image from the global library */
+export async function DELETE(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const imageId = searchParams.get("imageId");
-    if (!imageId) {
-      return NextResponse.json({ error: "imageId is required" }, { status: 400 });
+    const id = searchParams.get("id");
+    if (!id) {
+      return NextResponse.json({ error: "id is required" }, { status: 400 });
     }
 
-    const deleted = await removeReferenceImage(id, imageId);
+    const deleted = await deleteMediaImage(id);
     if (!deleted) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }

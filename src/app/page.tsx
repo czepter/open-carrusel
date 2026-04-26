@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Layers, Calendar, SlidersHorizontal, Trash2, Copy } from "lucide-react";
+import { Plus, Layers, Calendar, SlidersHorizontal, Trash2, Copy, ImageIcon } from "lucide-react";
 import { TopBar } from "@/components/layout/TopBar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +11,7 @@ import { CreateCarouselDialog } from "@/components/ui/create-carousel-dialog";
 import { BrandSetup } from "@/components/brand/BrandSetup";
 import { SlideRenderer } from "@/components/editor/SlideRenderer";
 import { TemplateGallery } from "@/components/templates/TemplateGallery";
+import { MediaLibrary } from "@/components/media/MediaLibrary";
 import type { Carousel } from "@/types/carousel";
 import type { BrandConfig } from "@/types/brand";
 
@@ -60,7 +61,7 @@ export default function DashboardPage() {
   }, []);
 
   const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [activeTab, setActiveTab] = useState<"carousels" | "templates">("carousels");
+  const [activeTab, setActiveTab] = useState<"carousels" | "templates" | "media">("carousels");
 
   const handleCreate = useCallback(async (name: string, aspectRatio: string) => {
     const res = await fetch("/api/carousels", {
@@ -146,9 +147,22 @@ export default function DashboardPage() {
             >
               Templates
             </button>
+            <button
+              onClick={() => setActiveTab("media")}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
+                activeTab === "media"
+                  ? "border-accent text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <ImageIcon className="h-3.5 w-3.5" />
+              Media
+            </button>
           </div>
 
-          {activeTab === "templates" ? (
+          {activeTab === "media" ? (
+            <MediaLibrary />
+          ) : activeTab === "templates" ? (
             <TemplateGallery />
           ) : loading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

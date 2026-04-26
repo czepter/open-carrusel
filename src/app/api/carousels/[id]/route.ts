@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCarousel, updateCarousel, deleteCarousel } from "@/lib/carousels";
+import { getCarousel, updateCarousel, deleteCarousel, addMediaImageIds } from "@/lib/carousels";
 
 export async function GET(
   _request: Request,
@@ -20,7 +20,17 @@ export async function PUT(
   const { id } = await params;
   try {
     const body = await request.json();
-    const updated = await updateCarousel(id, body);
+
+    // Handle media image linking separately
+    if (body.addMediaImageIds) {
+      await addMediaImageIds(id, body.addMediaImageIds);
+    }
+
+    // Strip non-updateCarousel fields before passing
+    const { addMediaImageIds: _, ...updates } = body;
+    const updated = Object.keys(updates).length > 0
+      ? await updateCarousel(id, updates)
+      : await getCarousel(id);
     if (!updated) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }

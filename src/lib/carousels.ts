@@ -218,6 +218,24 @@ export async function addReferenceImage(
   return image;
 }
 
+export async function updateReferenceImageMeta(
+  carouselId: string,
+  imageId: string,
+  meta: Partial<Pick<ReferenceImage, "description" | "embedding" | "embeddingVocab">>
+): Promise<ReferenceImage | null> {
+  const data = await load();
+  const carousel = data.carousels.find((c) => c.id === carouselId);
+  if (!carousel || !carousel.referenceImages) return null;
+
+  const img = carousel.referenceImages.find((i) => i.id === imageId);
+  if (!img) return null;
+
+  Object.assign(img, meta);
+  carousel.updatedAt = now();
+  await save(data);
+  return img;
+}
+
 export async function removeReferenceImage(
   carouselId: string,
   imageId: string
@@ -230,6 +248,40 @@ export async function removeReferenceImage(
   if (idx === -1) return false;
 
   carousel.referenceImages.splice(idx, 1);
+  carousel.updatedAt = now();
+  await save(data);
+  return true;
+}
+
+// --- Media library linking ---
+
+export async function addMediaImageIds(
+  carouselId: string,
+  imageIds: string[]
+): Promise<boolean> {
+  const data = await load();
+  const carousel = data.carousels.find((c) => c.id === carouselId);
+  if (!carousel) return false;
+
+  const existing = new Set(carousel.mediaImageIds ?? []);
+  for (const id of imageIds) existing.add(id);
+  carousel.mediaImageIds = [...existing];
+  carousel.updatedAt = now();
+  await save(data);
+  return true;
+}
+
+export async function removeMediaImageId(
+  carouselId: string,
+  imageId: string
+): Promise<boolean> {
+  const data = await load();
+  const carousel = data.carousels.find((c) => c.id === carouselId);
+  if (!carousel || !carousel.mediaImageIds) return false;
+
+  const idx = carousel.mediaImageIds.indexOf(imageId);
+  if (idx === -1) return false;
+  carousel.mediaImageIds.splice(idx, 1);
   carousel.updatedAt = now();
   await save(data);
   return true;
