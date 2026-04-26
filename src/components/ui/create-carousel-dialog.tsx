@@ -47,7 +47,17 @@ export function CreateCarouselDialog({
   };
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <Dialog.Root
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) {
+          setName("");
+          setMode("organic");
+          setAspectRatio("4:5");
+        }
+        onOpenChange(nextOpen);
+      }}
+    >
       <Dialog.Portal>
         <Dialog.Overlay data-oc-overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" />
         <Dialog.Content data-oc-dialog className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl bg-surface border border-border p-6 shadow-2xl">

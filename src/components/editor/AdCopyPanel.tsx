@@ -49,11 +49,12 @@ export function AdCopyPanel({ carousel, onUpdate }: AdCopyPanelProps) {
   const handleSaveAdCopy = useCallback(async () => {
     setSaving(true);
     try {
-      await fetch(`/api/carousels/${carousel.id}/adcopy`, {
+      const res = await fetch(`/api/carousels/${carousel.id}/adcopy`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ adPrimaryText: primaryText, adCta: cta }),
       });
+      if (!res.ok) return;
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
       onUpdate();
@@ -67,7 +68,7 @@ export function AdCopyPanel({ carousel, onUpdate }: AdCopyPanelProps) {
       setSlidesSaving((s) => ({ ...s, [slideId]: true }));
       try {
         const copy = slideAdCopy[slideId];
-        await fetch(`/api/carousels/${carousel.id}/slides/${slideId}`, {
+        const res = await fetch(`/api/carousels/${carousel.id}/slides/${slideId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -77,7 +78,7 @@ export function AdCopyPanel({ carousel, onUpdate }: AdCopyPanelProps) {
             },
           }),
         });
-        onUpdate();
+        if (res.ok) onUpdate();
       } finally {
         setSlidesSaving((s) => ({ ...s, [slideId]: false }));
       }
@@ -87,9 +88,13 @@ export function AdCopyPanel({ carousel, onUpdate }: AdCopyPanelProps) {
 
   const handleCopyPrimaryText = async () => {
     if (!primaryText) return;
-    await navigator.clipboard.writeText(primaryText);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(primaryText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard access denied — silently ignore
+    }
   };
 
   return (
@@ -196,7 +201,7 @@ export function AdCopyPanel({ carousel, onUpdate }: AdCopyPanelProps) {
                       </div>
                       <input
                         type="text"
-                        maxLength={50}
+                        maxLength={40}
                         value={copy.headline}
                         onChange={(e) =>
                           setSlideAdCopy((s) => ({
