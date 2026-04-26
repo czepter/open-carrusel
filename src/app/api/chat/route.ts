@@ -28,6 +28,7 @@ export async function POST(request: NextRequest) {
     carouselId?: string;
     stylePresetId?: string;
     model?: string;
+    effort?: string;
   };
   try {
     body = await request.json();
@@ -35,7 +36,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { message, sessionId, carouselId, stylePresetId, model } = body;
+  const { message, sessionId, carouselId, stylePresetId, model, effort } = body;
 
   if (
     !message ||
@@ -78,6 +79,11 @@ export async function POST(request: NextRequest) {
 
   if (model && typeof model === "string" && model.trim()) {
     args.push("--model", model.trim());
+  }
+
+  const VALID_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+  if (effort && typeof effort === "string" && VALID_EFFORTS.includes(effort)) {
+    args.push("--effort", effort);
   }
 
   if (sessionId) {

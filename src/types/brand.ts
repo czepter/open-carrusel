@@ -24,6 +24,7 @@ export interface BrandConfig {
   logoPath: string | null;
   styleKeywords: string[];
   preferredModel?: string;
+  preferredEffort?: string;
   createdAt: string;
   updatedAt: string;
 }

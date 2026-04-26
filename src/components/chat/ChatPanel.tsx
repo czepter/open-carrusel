@@ -39,6 +39,7 @@ export function ChatPanel({
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const [models, setModels] = useState<ClaudeModel[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>("");
+  const [selectedEffort, setSelectedEffort] = useState<string>("high");
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -60,12 +61,17 @@ export function ChatPanel({
       fetch("/api/models").then((r) => r.json()),
       fetch("/api/brand").then((r) => r.json()),
     ])
-      .then(([modelData, brandData]: [ClaudeModel[], { preferredModel?: string }]) => {
+      .then(([modelData, brandData]: [ClaudeModel[], { preferredModel?: string; preferredEffort?: string }]) => {
         if (!Array.isArray(modelData) || modelData.length === 0) return;
         setModels(modelData);
-        const saved = brandData?.preferredModel;
-        const isValid = saved && modelData.some((m) => m.id === saved);
-        setSelectedModel(isValid ? saved! : modelData[0].id);
+        const savedModel = brandData?.preferredModel;
+        const isValidModel = savedModel && modelData.some((m) => m.id === savedModel);
+        setSelectedModel(isValidModel ? savedModel! : modelData[0].id);
+        const VALID_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+        const savedEffort = brandData?.preferredEffort;
+        if (savedEffort && VALID_EFFORTS.includes(savedEffort)) {
+          setSelectedEffort(savedEffort);
+        }
       })
       .catch(() => {});
   }, []);
@@ -91,11 +97,19 @@ export function ChatPanel({
 
   const handleModelChange = useCallback((id: string) => {
     setSelectedModel(id);
-    // Persist permanently to server-side brand config
     fetch("/api/brand", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ preferredModel: id }),
+    }).catch(() => {});
+  }, []);
+
+  const handleEffortChange = useCallback((level: string) => {
+    setSelectedEffort(level);
+    fetch("/api/brand", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ preferredEffort: level }),
     }).catch(() => {});
   }, []);
 
@@ -164,6 +178,7 @@ export function ChatPanel({
             sessionId,
             carouselId,
             ...(selectedModel ? { model: selectedModel } : {}),
+            ...(selectedEffort ? { effort: selectedEffort } : {}),
           }),
           signal: abortRef.current.signal,
         });
@@ -285,7 +300,7 @@ export function ChatPanel({
         onStreamEnd?.();
       }
     },
-    [isStreaming, sessionId, carouselId, pendingImages, selectedModel, onStreamStart, onStreamEnd, persistMessages]
+    [isStreaming, sessionId, carouselId, pendingImages, selectedModel, selectedEffort, onStreamStart, onStreamEnd, persistMessages]
   );
 
   // Upload images: file → /api/upload → /api/media (global library)
@@ -396,6 +411,19 @@ export function ChatPanel({
               ))}
             </select>
           )}
+          <select
+            value={selectedEffort}
+            onChange={(e) => handleEffortChange(e.target.value)}
+            disabled={isStreaming}
+            className="text-[10px] bg-muted text-muted-foreground border border-border rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50 cursor-pointer"
+            aria-label="Select effort level"
+          >
+            {(["low", "medium", "high", "xhigh", "max"] as const).map((level) => (
+              <option key={level} value={level}>
+                {level}
+              </option>
+            ))}
+          </select>
           {messages.length > 0 && (
             <button
               onClick={handleClearChat}
