@@ -1,17 +1,16 @@
 import { readDataSafe, writeData, modifyData } from "./data";
 import { generateId, now } from "./utils";
-import type { Carousel, CarouselsData, Slide, AspectRatio, ReferenceImage, CarouselMode } from "@/types/carousel";
+import type { Carousel, CarouselsData, Slide, AspectRatio, ReferenceImage, CarouselMode, CarouselFontSettings } from "@/types/carousel";
 import { MAX_SLIDES, MAX_VERSIONS } from "@/types/carousel";
 
 const FILE = "carousels.json";
 
 // Applies defaults to carousels loaded from disk that predate the meta-ads mode.
+// The intermediate cast silences TS2783 (duplicate key warning) that fires when
+// `mode` is a required field on Carousel and also appears as the default key.
 function applyDefaults(carousel: Carousel): Carousel {
-  const base: Omit<Carousel, "mode"> & { mode?: Carousel["mode"] } = carousel;
-  return {
-    mode: "organic",  // default for all old carousels
-    ...base,
-  };
+  const c = carousel as Omit<Carousel, "mode"> & Partial<Pick<Carousel, "mode">>;
+  return { mode: "organic", ...c } as Carousel;
 }
 
 async function load(): Promise<CarouselsData> {
@@ -63,6 +62,7 @@ export async function updateCarousel(
     | "name" | "aspectRatio" | "tags" | "chatSessionId"
     | "caption" | "hashtags" | "costUsd"
     | "mode" | "adPrimaryText" | "adCta"
+    | "fontSettings"
   >>
 ): Promise<Carousel | null> {
   const data = await load();
@@ -75,8 +75,9 @@ export async function updateCarousel(
 
 export async function duplicateCarousel(id: string): Promise<Carousel | null> {
   const data = await load();
-  const source = data.carousels.find((c) => c.id === id);
-  if (!source) return null;
+  const rawSource = data.carousels.find((c) => c.id === id);
+  if (!rawSource) return null;
+  const source = applyDefaults(rawSource);
 
   const duplicate: Carousel = {
     ...source,
@@ -96,7 +97,7 @@ export async function duplicateCarousel(id: string): Promise<Carousel | null> {
 
   data.carousels.push(duplicate);
   await save(data);
-  return duplicate;
+  return applyDefaults(duplicate);
 }
 
 export async function deleteCarousel(id: string): Promise<boolean> {
@@ -319,4 +320,38 @@ export async function removeMediaImageId(
   carousel.updatedAt = now();
   await save(data);
   return true;
+}
+
+// --- Font settings ---
+
+/**
+ * Permanently rewrites every slide's HTML in a carousel using the given
+ * applyFn. Saves the old HTML to previousVersions for undo support.
+ */
+export async function applyFontSettingsToCarousel(
+  carouselId: string,
+  settings: CarouselFontSettings,
+  applyFn: (html: string, settings: CarouselFontSettings) => string
+): Promise<Carousel | null> {
+  const data = await load();
+  const idx = data.carousels.findIndex((c) => c.id === carouselId);
+  if (idx === -1) return null;
+
+  const carousel = data.carousels[idx];
+
+  carousel.slides = carousel.slides.map((slide) => {
+    const newHtml = applyFn(slide.html, settings);
+    if (newHtml === slide.html) return slide;
+    // Preserve undo history
+    const previousVersions = [
+      slide.html,
+      ...slide.previousVersions.slice(0, MAX_VERSIONS - 1),
+    ];
+    return { ...slide, html: newHtml, previousVersions };
+  });
+
+  carousel.fontSettings = settings;
+  carousel.updatedAt = now();
+  await save(data);
+  return applyDefaults(carousel);
 }
