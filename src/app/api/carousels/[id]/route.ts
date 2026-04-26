@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCarousel, updateCarousel, deleteCarousel, addMediaImageIds } from "@/lib/carousels";
+import { getCarousel, updateCarousel, deleteCarousel, addMediaImageIds, addCost } from "@/lib/carousels";
 
 export async function GET(
   _request: Request,
@@ -26,8 +26,13 @@ export async function PUT(
       await addMediaImageIds(id, body.addMediaImageIds);
     }
 
+    // Handle cost accumulation separately (atomic read-modify-write)
+    if (typeof body.addCostUsd === "number" && body.addCostUsd > 0) {
+      await addCost(id, body.addCostUsd);
+    }
+
     // Strip non-updateCarousel fields before passing
-    const { addMediaImageIds: _, ...updates } = body;
+    const { addMediaImageIds: _, addCostUsd: __, ...updates } = body;
     const updated = Object.keys(updates).length > 0
       ? await updateCarousel(id, updates)
       : await getCarousel(id);

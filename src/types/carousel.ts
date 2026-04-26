@@ -47,6 +47,30 @@ export interface ReferenceImage {
   embeddingVocab?: string[];      // Ordered vocabulary keys corresponding to embedding dimensions
 }
 
+export interface CarouselFontSettings {
+  headingFamily: string;
+  bodyFamily: string;
+  headingSize: number;    // px, e.g. 72
+  bodySize: number;       // px, e.g. 18
+  headingWeight: number;  // 300 | 400 | 500 | 600 | 700 | 800
+  bodyWeight: number;
+  letterSpacing: number;  // em, e.g. -0.02 to 0.1
+  lineHeight: number;     // multiplier, e.g. 1.3
+  textTransform: "none" | "uppercase" | "capitalize" | "lowercase";
+}
+
+export const DEFAULT_FONT_SETTINGS: CarouselFontSettings = {
+  headingFamily: "Inter",
+  bodyFamily: "Inter",
+  headingSize: 72,
+  bodySize: 18,
+  headingWeight: 700,
+  bodyWeight: 400,
+  letterSpacing: 0,
+  lineHeight: 1.3,
+  textTransform: "none",
+};
+
 export interface Carousel {
   id: string;
   name: string;
@@ -59,6 +83,8 @@ export interface Carousel {
   chatSessionId: string | null;
   /** Accumulated AI cost in USD across all chat turns */
   costUsd?: number;
+  /** Per-carousel typography settings applied at render time */
+  fontSettings?: CarouselFontSettings;
   isTemplate: boolean;
   tags: string[];
   createdAt: string;

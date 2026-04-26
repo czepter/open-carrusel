@@ -342,11 +342,10 @@ export async function applyFontSettingsToCarousel(
   carousel.slides = carousel.slides.map((slide) => {
     const newHtml = applyFn(slide.html, settings);
     if (newHtml === slide.html) return slide;
-    // Preserve undo history
-    const previousVersions = [
-      slide.html,
-      ...slide.previousVersions.slice(0, MAX_VERSIONS - 1),
-    ];
+    // Push to end — matches the LIFO convention of updateSlide/undoSlide
+    // so undoSlide's pop() retrieves the version just before this apply.
+    const previousVersions = [...slide.previousVersions, slide.html];
+    if (previousVersions.length > MAX_VERSIONS) previousVersions.shift();
     return { ...slide, html: newHtml, previousVersions };
   });
 

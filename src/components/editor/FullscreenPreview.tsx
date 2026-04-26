@@ -5,7 +5,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { X, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SlideRenderer } from "./SlideRenderer";
-import type { Slide, AspectRatio } from "@/types/carousel";
+import type { Slide, AspectRatio, CarouselFontSettings } from "@/types/carousel";
 
 interface FullscreenPreviewProps {
   open: boolean;
@@ -14,6 +14,7 @@ interface FullscreenPreviewProps {
   aspectRatio: AspectRatio;
   activeIndex: number;
   onActiveChange: (index: number) => void;
+  fontSettings?: CarouselFontSettings;
 }
 
 export function FullscreenPreview({
@@ -23,6 +24,7 @@ export function FullscreenPreview({
   aspectRatio,
   activeIndex,
   onActiveChange,
+  fontSettings,
 }: FullscreenPreviewProps) {
   const slide = slides[activeIndex];
 
@@ -74,6 +76,7 @@ export function FullscreenPreview({
             <SlideRenderer
               html={slide.html}
               aspectRatio={aspectRatio}
+              fontSettings={fontSettings}
               style={{ width: "100%", height: "100%", maxWidth: 800 }}
             />
           )}

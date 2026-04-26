@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SlideRenderer } from "./SlideRenderer";
 import { SafeZoneOverlay } from "./SafeZoneOverlay";
-import type { Slide, AspectRatio } from "@/types/carousel";
+import type { Slide, AspectRatio, CarouselFontSettings } from "@/types/carousel";
 
 interface CarouselPreviewProps {
   slides: Slide[];
@@ -13,6 +13,7 @@ interface CarouselPreviewProps {
   activeIndex: number;
   onActiveChange: (index: number) => void;
   showSafeZones?: boolean;
+  fontSettings?: CarouselFontSettings;
 }
 
 export function CarouselPreview({
@@ -21,6 +22,7 @@ export function CarouselPreview({
   activeIndex,
   onActiveChange,
   showSafeZones = false,
+  fontSettings,
 }: CarouselPreviewProps) {
   const slide = slides[activeIndex];
   const prevIndexRef = useRef(activeIndex);
@@ -70,6 +72,7 @@ export function CarouselPreview({
           <SlideRenderer
             html={slide.html}
             aspectRatio={aspectRatio}
+            fontSettings={fontSettings}
             style={{ width: "100%", height: "100%" }}
           />
           <SafeZoneOverlay aspectRatio={aspectRatio} visible={showSafeZones} />

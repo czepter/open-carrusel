@@ -4,7 +4,7 @@ import path from "path";
 import sharp from "sharp";
 import { wrapSlideHtml, extractFontFamilies } from "./slide-html";
 import { getInlinedFontCSS } from "./fonts";
-import type { Slide, AspectRatio } from "@/types/carousel";
+import type { Slide, AspectRatio, CarouselFontSettings } from "@/types/carousel";
 import { DIMENSIONS } from "@/types/carousel";
 
 // Singleton browser with lifecycle management
@@ -65,13 +65,18 @@ async function inlineImages(html: string): Promise<string> {
  */
 export async function exportSlide(
   slide: Slide,
-  aspectRatio: AspectRatio
+  aspectRatio: AspectRatio,
+  fontSettings?: CarouselFontSettings
 ): Promise<Buffer> {
   const { width, height } = DIMENSIONS[aspectRatio];
 
-  // Get inlined font CSS
-  const fontFamilies = extractFontFamilies(slide.html);
-  const inlinedFontCss = await getInlinedFontCSS(fontFamilies);
+  // Get inlined font CSS — include fontSettings families so overridden fonts are embedded
+  const slideFamilies = extractFontFamilies(slide.html);
+  const settingsFamilies = fontSettings
+    ? [fontSettings.headingFamily, fontSettings.bodyFamily]
+    : [];
+  const allFamilies = [...new Set([...slideFamilies, ...settingsFamilies])];
+  const inlinedFontCss = await getInlinedFontCSS(allFamilies);
 
   // Inline images
   const inlinedHtml = await inlineImages(slide.html);
@@ -79,6 +84,7 @@ export async function exportSlide(
   // Build self-contained HTML
   const fullHtml = wrapSlideHtml(inlinedHtml, aspectRatio, {
     inlineFontCss: inlinedFontCss,
+    fontSettings,
   });
 
   const br = await getBrowser();
@@ -127,6 +133,7 @@ export async function exportSlide(
 export async function exportAllSlides(
   slides: Slide[],
   aspectRatio: AspectRatio,
+  fontSettings?: CarouselFontSettings,
   onProgress?: (current: number, total: number) => void
 ): Promise<{ name: string; buffer: Buffer }[]> {
   const results: { name: string; buffer: Buffer }[] = [];
@@ -137,7 +144,7 @@ export async function exportAllSlides(
     const batchResults = await Promise.all(
       batch.map(async (slide, batchIdx) => {
         const idx = i + batchIdx;
-        const buffer = await exportSlide(slide, aspectRatio);
+        const buffer = await exportSlide(slide, aspectRatio, fontSettings);
         onProgress?.(idx + 1, slides.length);
         return { name: `slide-${idx + 1}.png`, buffer };
       })
