@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server";
-import path from "path";
 import { listMediaImages, addMediaImage, deleteMediaImage } from "@/lib/media";
 import { generateId, now } from "@/lib/utils";
 import { describeImage } from "@/lib/image-describe";
 import { computeEmbedding } from "@/lib/vector-store";
 import type { MediaImage } from "@/types/media";
+import { resolveUploadImagePath } from "@/lib/upload-path";
 
-const UPLOADS_DIR = path.resolve(process.cwd(), "public", "uploads");
-
+/** API-safe media image shape without internal filesystem/embedding fields. */
 type PublicMediaImage = Pick<MediaImage, "id" | "url" | "name" | "uploadedAt" | "description">;
 
 function toPublicMediaImage(image: MediaImage): PublicMediaImage {
@@ -18,18 +17,6 @@ function toPublicMediaImage(image: MediaImage): PublicMediaImage {
     uploadedAt: image.uploadedAt,
     description: image.description,
   };
-}
-
-function resolveUploadImagePath(url: string): string | null {
-  if (!url.startsWith("/uploads/")) return null;
-  if (url.includes("..") || url.includes("\0")) return null;
-  const relative = url.replace(/^\/+/, "");
-  const absPath = path.resolve(process.cwd(), "public", relative);
-  const relativeToUploads = path.relative(UPLOADS_DIR, absPath);
-  if (relativeToUploads.startsWith("..") || path.isAbsolute(relativeToUploads)) {
-    return null;
-  }
-  return absPath;
 }
 
 /** GET /api/media — list all images in the global media library */

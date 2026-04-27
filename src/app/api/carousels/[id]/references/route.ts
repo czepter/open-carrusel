@@ -1,23 +1,9 @@
 import { NextResponse } from "next/server";
-import path from "path";
 import { addReferenceImage, removeReferenceImage, getCarousel } from "@/lib/carousels";
 import { generateId, now } from "@/lib/utils";
 import { describeImage } from "@/lib/image-describe";
 import { computeEmbedding } from "@/lib/vector-store";
-
-const UPLOADS_DIR = path.resolve(process.cwd(), "public", "uploads");
-
-function resolveUploadImagePath(url: string): string | null {
-  if (!url.startsWith("/uploads/")) return null;
-  if (url.includes("..") || url.includes("\0")) return null;
-  const relative = url.replace(/^\/+/, "");
-  const absPath = path.resolve(process.cwd(), "public", relative);
-  const relativeToUploads = path.relative(UPLOADS_DIR, absPath);
-  if (relativeToUploads.startsWith("..") || path.isAbsolute(relativeToUploads)) {
-    return null;
-  }
-  return absPath;
-}
+import { resolveUploadImagePath } from "@/lib/upload-path";
 
 export async function GET(
   _request: Request,

@@ -294,11 +294,11 @@ export async function addMediaImageIds(
   carouselId: string,
   imageIds: string[]
 ): Promise<boolean> {
-  let found = false;
+  let carouselFound = false;
   await modifyData<CarouselsData>(FILE, { carousels: [] }, (data) => {
     const carousel = data.carousels.find((c) => c.id === carouselId);
     if (!carousel) return data;
-    found = true;
+    carouselFound = true;
 
     const existing = new Set(carousel.mediaImageIds ?? []);
     for (const id of imageIds) existing.add(id);
@@ -306,7 +306,7 @@ export async function addMediaImageIds(
     carousel.updatedAt = now();
     return data;
   });
-  return found;
+  return carouselFound;
 }
 
 export async function removeMediaImageId(

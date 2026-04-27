@@ -42,9 +42,11 @@ export async function PUT(
     }
 
     // Strip non-updateCarousel fields before passing
-    const updates = { ...body };
-    delete updates.addMediaImageIds;
-    delete updates.addCostUsd;
+    const updates = Object.fromEntries(
+      Object.entries(body).filter(
+        ([key]) => key !== "addMediaImageIds" && key !== "addCostUsd"
+      )
+    );
     const updated = Object.keys(updates).length > 0
       ? await updateCarousel(id, updates)
       : await getCarousel(id);
