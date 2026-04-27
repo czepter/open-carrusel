@@ -4,11 +4,38 @@ import { listMediaImages, addMediaImage, deleteMediaImage } from "@/lib/media";
 import { generateId, now } from "@/lib/utils";
 import { describeImage } from "@/lib/image-describe";
 import { computeEmbedding } from "@/lib/vector-store";
+import type { MediaImage } from "@/types/media";
+
+const UPLOADS_DIR = path.resolve(process.cwd(), "public", "uploads");
+
+type PublicMediaImage = Pick<MediaImage, "id" | "url" | "name" | "uploadedAt" | "description">;
+
+function toPublicMediaImage(image: MediaImage): PublicMediaImage {
+  return {
+    id: image.id,
+    url: image.url,
+    name: image.name,
+    uploadedAt: image.uploadedAt,
+    description: image.description,
+  };
+}
+
+function resolveUploadImagePath(url: string): string | null {
+  if (!url.startsWith("/uploads/")) return null;
+  if (url.includes("..") || url.includes("\0")) return null;
+  const relative = url.replace(/^\/+/, "");
+  const absPath = path.resolve(process.cwd(), "public", relative);
+  const relativeToUploads = path.relative(UPLOADS_DIR, absPath);
+  if (relativeToUploads.startsWith("..") || path.isAbsolute(relativeToUploads)) {
+    return null;
+  }
+  return absPath;
+}
 
 /** GET /api/media — list all images in the global media library */
 export async function GET() {
   const images = await listMediaImages();
-  return NextResponse.json({ images });
+  return NextResponse.json({ images: images.map(toPublicMediaImage) });
 }
 
 /** POST /api/media — add an uploaded image to the global media library */
@@ -21,7 +48,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "url is required" }, { status: 400 });
     }
 
-    const absPath = path.resolve(process.cwd(), "public", url.replace(/^\//, ""));
+    const absPath = resolveUploadImagePath(url);
+    if (!absPath) {
+      return NextResponse.json(
+        { error: "url must be a safe /uploads/... path" },
+        { status: 400 }
+      );
+    }
 
     // Generate description + embedding (non-fatal)
     let description: string | undefined;
@@ -49,7 +82,7 @@ export async function POST(request: Request) {
     };
 
     const result = await addMediaImage(image);
-    return NextResponse.json(result, { status: 201 });
+    return NextResponse.json(toPublicMediaImage(result), { status: 201 });
   } catch {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }

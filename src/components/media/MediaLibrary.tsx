@@ -186,6 +186,7 @@ export function MediaLibrary() {
             </div>
             <button
               onClick={() => setPreviewImage(null)}
+              aria-label="Close image preview"
               className="absolute top-3 right-3 h-8 w-8 rounded-full bg-white/90 text-foreground flex items-center justify-center shadow-lg hover:bg-white"
             >
               <X className="h-4 w-4" />

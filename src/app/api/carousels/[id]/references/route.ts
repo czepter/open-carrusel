@@ -5,6 +5,20 @@ import { generateId, now } from "@/lib/utils";
 import { describeImage } from "@/lib/image-describe";
 import { computeEmbedding } from "@/lib/vector-store";
 
+const UPLOADS_DIR = path.resolve(process.cwd(), "public", "uploads");
+
+function resolveUploadImagePath(url: string): string | null {
+  if (!url.startsWith("/uploads/")) return null;
+  if (url.includes("..") || url.includes("\0")) return null;
+  const relative = url.replace(/^\/+/, "");
+  const absPath = path.resolve(process.cwd(), "public", relative);
+  const relativeToUploads = path.relative(UPLOADS_DIR, absPath);
+  if (relativeToUploads.startsWith("..") || path.isAbsolute(relativeToUploads)) {
+    return null;
+  }
+  return absPath;
+}
+
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -30,7 +44,13 @@ export async function POST(
       return NextResponse.json({ error: "url is required" }, { status: 400 });
     }
 
-    const absPath = path.resolve(process.cwd(), "public", url.replace(/^\//, ""));
+    const absPath = resolveUploadImagePath(url);
+    if (!absPath) {
+      return NextResponse.json(
+        { error: "url must be a safe /uploads/... path" },
+        { status: 400 }
+      );
+    }
 
     // Generate verbal description via Claude vision + compute embedding
     let description: string | undefined;
@@ -44,7 +64,7 @@ export async function POST(
       embeddingVocab = result.vocab;
     } catch (err) {
       // Non-fatal: store the image even if description generation fails
-      // (e.g. missing ANTHROPIC_API_KEY)
+      // (e.g. missing Claude CLI, missing Claude authentication, or insufficient tool permissions)
       console.warn("Failed to generate image description:", err);
     }
 

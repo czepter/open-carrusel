@@ -18,7 +18,7 @@ AI-powered Instagram carousel builder. Next.js 16 + React 19 + TypeScript + Tail
 - `src/lib/carousels.ts` — Carousel and slide CRUD with version history
 - `src/lib/claude-path.ts` — Portable Claude CLI discovery
 - `src/lib/media.ts` — Global media library CRUD (stored in `data/media.json`)
-- `src/lib/image-describe.ts` — Claude vision image description (requires ANTHROPIC_API_KEY)
+- `src/lib/image-describe.ts` — Claude vision image description (requires Claude CLI installed + authenticated)
 - `src/lib/vector-store.ts` — TF-vector cosine similarity for image deduplication
 
 ## API Routes

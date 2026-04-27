@@ -22,7 +22,17 @@ export async function PUT(
     const body = await request.json();
 
     // Handle media image linking separately
-    if (body.addMediaImageIds) {
+    if ("addMediaImageIds" in body) {
+      if (
+        !Array.isArray(body.addMediaImageIds) ||
+        body.addMediaImageIds.length === 0 ||
+        !body.addMediaImageIds.every((mediaImageId) => typeof mediaImageId === "string")
+      ) {
+        return NextResponse.json(
+          { error: "addMediaImageIds must be a non-empty array of strings" },
+          { status: 400 }
+        );
+      }
       await addMediaImageIds(id, body.addMediaImageIds);
     }
 
@@ -32,7 +42,9 @@ export async function PUT(
     }
 
     // Strip non-updateCarousel fields before passing
-    const { addMediaImageIds: _, addCostUsd: __, ...updates } = body;
+    const updates = { ...body };
+    delete updates.addMediaImageIds;
+    delete updates.addCostUsd;
     const updated = Object.keys(updates).length > 0
       ? await updateCarousel(id, updates)
       : await getCarousel(id);

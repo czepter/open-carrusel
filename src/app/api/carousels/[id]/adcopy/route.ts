@@ -25,12 +25,28 @@ export async function PUT(
   const { id } = await params;
   try {
     const body = await request.json();
-    const { adPrimaryText, adCta } = body as {
-      adPrimaryText?: string;
-      adCta?: MetaAdCta;
-    };
+    const rawAdPrimaryText = body?.adPrimaryText;
+    const rawAdCta = body?.adCta;
 
-    if (adPrimaryText && adPrimaryText.length > 125) {
+    if (rawAdPrimaryText !== undefined && typeof rawAdPrimaryText !== "string") {
+      return NextResponse.json(
+        { error: "adPrimaryText must be a string" },
+        { status: 400 }
+      );
+    }
+
+    if (rawAdCta !== undefined && typeof rawAdCta !== "string") {
+      return NextResponse.json(
+        { error: "adCta must be a string" },
+        { status: 400 }
+      );
+    }
+
+    const adPrimaryText =
+      typeof rawAdPrimaryText === "string" ? rawAdPrimaryText.trim() : undefined;
+    const adCta = typeof rawAdCta === "string" ? rawAdCta.trim() : undefined;
+
+    if (adPrimaryText !== undefined && adPrimaryText.length > 125) {
       return NextResponse.json(
         { error: "adPrimaryText exceeds 125 characters" },
         { status: 400 }
@@ -38,7 +54,10 @@ export async function PUT(
     }
 
     const validCtaValues = Object.keys(META_AD_CTA_LABELS) as MetaAdCta[];
-    const safeCta = adCta && validCtaValues.includes(adCta) ? adCta : undefined;
+    const safeCta =
+      adCta && validCtaValues.includes(adCta as MetaAdCta)
+        ? (adCta as MetaAdCta)
+        : undefined;
 
     const updated = await updateCarousel(id, { adPrimaryText, adCta: safeCta });
     if (!updated) {

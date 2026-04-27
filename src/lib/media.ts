@@ -1,14 +1,10 @@
-import { readDataSafe, writeData } from "./data";
+import { readDataSafe, modifyData } from "./data";
 import type { MediaImage, MediaLibraryData } from "@/types/media";
 
 const FILE = "media.json";
 
 async function load(): Promise<MediaLibraryData> {
   return readDataSafe<MediaLibraryData>(FILE, { images: [] });
-}
-
-async function save(data: MediaLibraryData): Promise<void> {
-  await writeData(FILE, data);
 }
 
 /** List all images in the global media library */
@@ -32,9 +28,10 @@ export async function getMediaImagesByIds(ids: string[]): Promise<MediaImage[]> 
 
 /** Add an image to the global media library */
 export async function addMediaImage(image: MediaImage): Promise<MediaImage> {
-  const data = await load();
-  data.images.push(image);
-  await save(data);
+  await modifyData<MediaLibraryData>(FILE, { images: [] }, (data) => {
+    data.images.push(image);
+    return data;
+  });
   return image;
 }
 
@@ -43,20 +40,26 @@ export async function updateMediaImageMeta(
   id: string,
   meta: Partial<Pick<MediaImage, "description" | "embedding" | "embeddingVocab" | "name">>
 ): Promise<MediaImage | null> {
-  const data = await load();
-  const img = data.images.find((i) => i.id === id);
-  if (!img) return null;
-  Object.assign(img, meta);
-  await save(data);
-  return img;
+  let updated: MediaImage | null = null;
+  await modifyData<MediaLibraryData>(FILE, { images: [] }, (data) => {
+    const img = data.images.find((i) => i.id === id);
+    if (!img) return data;
+    Object.assign(img, meta);
+    updated = img;
+    return data;
+  });
+  return updated;
 }
 
 /** Delete an image from the global media library */
 export async function deleteMediaImage(id: string): Promise<boolean> {
-  const data = await load();
-  const idx = data.images.findIndex((img) => img.id === id);
-  if (idx === -1) return false;
-  data.images.splice(idx, 1);
-  await save(data);
-  return true;
+  let deleted = false;
+  await modifyData<MediaLibraryData>(FILE, { images: [] }, (data) => {
+    const idx = data.images.findIndex((img) => img.id === id);
+    if (idx === -1) return data;
+    data.images.splice(idx, 1);
+    deleted = true;
+    return data;
+  });
+  return deleted;
 }
