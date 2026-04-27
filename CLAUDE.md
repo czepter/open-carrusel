@@ -17,6 +17,9 @@ AI-powered Instagram carousel builder. Next.js 16 + React 19 + TypeScript + Tail
 - `src/lib/data.ts` — JSON storage with proper async-mutex and atomic writes
 - `src/lib/carousels.ts` — Carousel and slide CRUD with version history
 - `src/lib/claude-path.ts` — Portable Claude CLI discovery
+- `src/lib/media.ts` — Global media library CRUD (stored in `data/media.json`)
+- `src/lib/image-describe.ts` — Claude vision image description (requires Claude CLI installed + authenticated)
+- `src/lib/vector-store.ts` — TF-vector cosine similarity for image deduplication
 
 ## API Routes
 
@@ -33,6 +36,9 @@ All at localhost:3000:
 - `GET/PUT /api/brand` — Brand configuration
 - `GET/POST /api/templates` — Templates
 - `POST /api/upload` — Image upload (PNG/JPG/WebP only, max 10MB)
+- `GET/POST/DELETE /api/media` — Global media library (list, add, remove images)
+- `POST /api/images/similar` — Find similar images across carousels (body: { imageId, topK?, threshold? })
+- `POST /api/images/describe` — Backfill descriptions + embeddings (body: { imageId? } or empty for all)
 - `GET /api/fonts` — Google Fonts list
 
 ## Conventions

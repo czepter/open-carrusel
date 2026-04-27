@@ -52,3 +52,30 @@ export async function readDataSafe<T>(filename: string, fallback: T): Promise<T>
     return fallback;
   }
 }
+
+/**
+ * Atomic read-modify-write: reads the file, applies a modifier function,
+ * and writes back — all within the same mutex lock to prevent lost updates.
+ */
+export async function modifyData<T>(
+  filename: string,
+  fallback: T,
+  modifier: (data: T) => T
+): Promise<T> {
+  const mutex = getMutex(filename);
+  return mutex.runExclusive(async () => {
+    await ensureDataDir();
+    const filePath = path.join(DATA_DIR, filename);
+    let data: T;
+    try {
+      data = JSON.parse(await readFile(filePath, "utf-8")) as T;
+    } catch {
+      data = fallback;
+    }
+    const modified = modifier(data);
+    const tmpPath = filePath + ".tmp";
+    await writeFile(tmpPath, JSON.stringify(modified, null, 2), "utf-8");
+    await rename(tmpPath, filePath);
+    return modified;
+  });
+}

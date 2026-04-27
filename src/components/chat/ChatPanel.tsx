@@ -2,10 +2,11 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { ChatMessage } from "./ChatMessage";
-import { ChatInput } from "./ChatInput";
+import { ChatInput, type PendingImage } from "./ChatInput";
 import { ReferenceImages } from "./ReferenceImages";
 import { AlertCircle, Plug } from "lucide-react";
 import type { ReferenceImage } from "@/types/carousel";
+import type { ClaudeModel } from "@/app/api/models/route";
 
 interface Message {
   id: string;
@@ -34,6 +35,11 @@ export function ChatPanel({
   const [isStreaming, setIsStreaming] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
+  const [models, setModels] = useState<ClaudeModel[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>("");
+  const [selectedEffort, setSelectedEffort] = useState<string>("high");
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -48,6 +54,27 @@ export function ChatPanel({
       // ignore corrupted data
     }
   }, [carouselId]);
+
+  // Fetch available models from the CLI and restore last selection from brand config
+  useEffect(() => {
+    Promise.all([
+      fetch("/api/models").then((r) => r.json()),
+      fetch("/api/brand").then((r) => r.json()),
+    ])
+      .then(([modelData, brandData]: [ClaudeModel[], { preferredModel?: string; preferredEffort?: string }]) => {
+        if (!Array.isArray(modelData) || modelData.length === 0) return;
+        setModels(modelData);
+        const savedModel = brandData?.preferredModel;
+        const isValidModel = savedModel && modelData.some((m) => m.id === savedModel);
+        setSelectedModel(isValidModel ? savedModel! : modelData[0].id);
+        const VALID_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+        const savedEffort = brandData?.preferredEffort;
+        if (savedEffort && VALID_EFFORTS.includes(savedEffort)) {
+          setSelectedEffort(savedEffort);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Persist messages to localStorage
   const persistMessages = useCallback(
@@ -68,6 +95,24 @@ export function ChatPanel({
     localStorage.removeItem(`chat-session-${carouselId}`);
   }, [carouselId]);
 
+  const handleModelChange = useCallback((id: string) => {
+    setSelectedModel(id);
+    fetch("/api/brand", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ preferredModel: id }),
+    }).catch(() => {});
+  }, []);
+
+  const handleEffortChange = useCallback((level: string) => {
+    setSelectedEffort(level);
+    fetch("/api/brand", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ preferredEffort: level }),
+    }).catch(() => {});
+  }, []);
+
   const handleStopGenerating = useCallback(() => {
     abortRef.current?.abort();
   }, []);
@@ -80,17 +125,38 @@ export function ChatPanel({
   }, [messages]);
 
   const handleSend = useCallback(
-    async (message: string) => {
+    async (userText: string) => {
       if (isStreaming) return;
       setError(null);
       setIsStreaming(true);
       onStreamStart?.();
 
-      // Add user message
+      // Build the actual message sent to the AI:
+      // If there are pending images, prepend their URLs so the AI knows about them
+      const currentPending = pendingImages;
+      let aiMessage = userText;
+      if (currentPending.length > 0) {
+        const imageList = currentPending
+          .map((img) => `- "${img.name}" (${img.url})`)
+          .join("\n");
+        const prefix =
+          currentPending.length === 1
+            ? `[Uploaded image: "${currentPending[0].name}" at ${currentPending[0].url}]\n\n`
+            : `[Uploaded ${currentPending.length} images:\n${imageList}]\n\n`;
+        aiMessage = prefix + (userText || "Use these images as slide backgrounds.");
+        setPendingImages([]);
+      }
+
+      // Show user message in chat (clean text, no technical URLs)
+      const displayText =
+        userText ||
+        (currentPending.length === 1
+          ? `📷 ${currentPending[0].name}`
+          : `📷 ${currentPending.length} images`);
       const userMsg: Message = {
         id: crypto.randomUUID(),
         role: "user",
-        content: message,
+        content: displayText,
       };
       setMessages((prev) => [...prev, userMsg]);
 
@@ -108,9 +174,11 @@ export function ChatPanel({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            message,
+            message: aiMessage,
             sessionId,
             carouselId,
+            ...(selectedModel ? { model: selectedModel } : {}),
+            ...(selectedEffort ? { effort: selectedEffort } : {}),
           }),
           signal: abortRef.current.signal,
         });
@@ -151,7 +219,7 @@ export function ChatPanel({
                     )
                   );
                 } else if (data.type === "result" && typeof data.text === "string") {
-                  accumulated = data.text; // result is the final complete text
+                  accumulated = data.text;
                   setMessages((prev) =>
                     prev.map((m) =>
                       m.id === assistantId
@@ -159,6 +227,13 @@ export function ChatPanel({
                         : m
                     )
                   );
+                } else if (data.type === "cost" && typeof data.costUsd === "number") {
+                  // Persist cost delta to carousel (fire-and-forget)
+                  fetch(`/api/carousels/${carouselId}`, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ addCostUsd: data.costUsd }),
+                  }).catch(() => {});
                 }
               } catch {
                 // skip unparseable
@@ -225,8 +300,71 @@ export function ChatPanel({
         onStreamEnd?.();
       }
     },
-    [isStreaming, sessionId, carouselId, onStreamStart, onStreamEnd, persistMessages]
+    [isStreaming, sessionId, carouselId, pendingImages, selectedModel, selectedEffort, onStreamStart, onStreamEnd, persistMessages]
   );
+
+  // Upload images: file → /api/upload → /api/media (global library)
+  // + link to current carousel. Images appear as pending attachments.
+  const handleImageUpload = useCallback(
+    async (files: File[]) => {
+      setIsUploading(true);
+      try {
+        const results = await Promise.all(
+          files.map(async (file) => {
+            // 1. Upload file
+            const formData = new FormData();
+            formData.append("file", file);
+            const uploadRes = await fetch("/api/upload", {
+              method: "POST",
+              body: formData,
+            });
+            if (!uploadRes.ok) return null;
+            const uploadData = await uploadRes.json();
+
+            // 2. Add to global media library
+            const mediaRes = await fetch("/api/media", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                url: uploadData.url,
+                name: file.name,
+              }),
+            });
+            if (!mediaRes.ok) return null;
+            const mediaImage = await mediaRes.json();
+
+            // 3. Link to current carousel
+            await fetch(`/api/carousels/${carouselId}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                addMediaImageIds: [mediaImage.id],
+              }),
+            });
+
+            return { url: uploadData.url as string, name: file.name };
+          })
+        );
+
+        const uploaded = results.filter(Boolean) as PendingImage[];
+        if (uploaded.length === 0) {
+          setError("Failed to upload images");
+          return;
+        }
+
+        setPendingImages((prev) => [...prev, ...uploaded]);
+      } catch {
+        setError("Failed to upload images");
+      } finally {
+        setIsUploading(false);
+      }
+    },
+    [carouselId]
+  );
+
+  const handleRemovePendingImage = useCallback((url: string) => {
+    setPendingImages((prev) => prev.filter((img) => img.url !== url));
+  }, []);
 
   if (!claudeAvailable) {
     return (
@@ -250,21 +388,51 @@ export function ChatPanel({
 
   return (
     <div className="h-full flex flex-col">
-      <div className="px-4 py-3 border-b border-border flex items-start justify-between">
-        <div>
+      <div className="px-4 py-3 border-b border-border flex items-start justify-between gap-2">
+        <div className="min-w-0">
           <h2 className="text-sm font-semibold">AI Assistant</h2>
           <p className="text-xs text-muted-foreground">
             Describe the carousel you want to create
           </p>
         </div>
-        {messages.length > 0 && (
-          <button
-            onClick={handleClearChat}
-            className="text-[10px] text-muted-foreground hover:text-destructive transition-colors px-1.5 py-0.5 rounded"
+        <div className="flex items-center gap-1 shrink-0">
+          {models.length > 0 && (
+            <select
+              value={selectedModel}
+              onChange={(e) => handleModelChange(e.target.value)}
+              disabled={isStreaming}
+              className="text-[10px] bg-muted text-muted-foreground border border-border rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50 cursor-pointer"
+              aria-label="Select AI model"
+            >
+              {models.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+          )}
+          <select
+            value={selectedEffort}
+            onChange={(e) => handleEffortChange(e.target.value)}
+            disabled={isStreaming}
+            className="text-[10px] bg-muted text-muted-foreground border border-border rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50 cursor-pointer"
+            aria-label="Select effort level"
           >
-            Clear
-          </button>
-        )}
+            {(["low", "medium", "high", "xhigh", "max"] as const).map((level) => (
+              <option key={level} value={level}>
+                {level}
+              </option>
+            ))}
+          </select>
+          {messages.length > 0 && (
+            <button
+              onClick={handleClearChat}
+              className="text-[10px] text-muted-foreground hover:text-destructive transition-colors px-1.5 py-0.5 rounded"
+            >
+              Clear
+            </button>
+          )}
+        </div>
       </div>
 
       <ReferenceImages
@@ -307,6 +475,10 @@ export function ChatPanel({
         isStreaming={isStreaming}
         textareaRef={chatInputRef}
         onStop={handleStopGenerating}
+        onImageUpload={handleImageUpload}
+        isUploading={isUploading}
+        pendingImages={pendingImages}
+        onRemovePendingImage={handleRemovePendingImage}
       />
     </div>
   );

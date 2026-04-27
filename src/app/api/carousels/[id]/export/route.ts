@@ -23,10 +23,11 @@ export async function POST(
   }
 
   try {
-    // Export all slides to PNG buffers
+    // Export all slides to PNG buffers (applying font settings if configured)
     const pngBuffers = await exportAllSlides(
       carousel.slides,
-      carousel.aspectRatio
+      carousel.aspectRatio,
+      carousel.fontSettings
     );
 
     // Build ZIP archive and collect all data

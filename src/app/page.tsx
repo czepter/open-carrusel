@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Layers, Calendar, SlidersHorizontal, Trash2, Copy } from "lucide-react";
+import { Plus, Layers, Calendar, SlidersHorizontal, Trash2, Copy, ImageIcon, AlertTriangle } from "lucide-react";
 import { TopBar } from "@/components/layout/TopBar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +11,10 @@ import { CreateCarouselDialog } from "@/components/ui/create-carousel-dialog";
 import { BrandSetup } from "@/components/brand/BrandSetup";
 import { SlideRenderer } from "@/components/editor/SlideRenderer";
 import { TemplateGallery } from "@/components/templates/TemplateGallery";
+import { MediaLibrary } from "@/components/media/MediaLibrary";
+import { CostBadge, formatCost } from "@/components/ui/cost-badge";
 import type { Carousel } from "@/types/carousel";
+import { BUDGET_WARNING_USD } from "@/types/carousel";
 import type { BrandConfig } from "@/types/brand";
 
 export default function DashboardPage() {
@@ -20,6 +23,11 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [showBrandSetup, setShowBrandSetup] = useState(false);
   const [brand, setBrand] = useState<BrandConfig | null>(null);
+
+  const totalCost = useMemo(
+    () => carousels.reduce((sum, c) => sum + (c.costUsd ?? 0), 0),
+    [carousels]
+  );
 
   useEffect(() => {
     Promise.all([
@@ -60,15 +68,16 @@ export default function DashboardPage() {
   }, []);
 
   const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [activeTab, setActiveTab] = useState<"carousels" | "templates">("carousels");
+  const [activeTab, setActiveTab] = useState<"carousels" | "templates" | "media">("carousels");
 
-  const handleCreate = useCallback(async (name: string, aspectRatio: string) => {
+  const handleCreate = useCallback(async (name: string, aspectRatio: string, mode: string) => {
     const res = await fetch("/api/carousels", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name,
         aspectRatio,
+        mode,
       }),
     });
     if (res.ok) {
@@ -118,11 +127,28 @@ export default function DashboardPage() {
                 Create Instagram carousels with AI
               </p>
             </div>
-            <Button onClick={() => setShowCreateDialog(true)} variant="accent">
-              <Plus className="h-4 w-4" />
-              New Carousel
-            </Button>
+            <div className="flex items-center gap-3">
+              {totalCost > 0 && <CostBadge costUsd={totalCost} />}
+              <Button onClick={() => setShowCreateDialog(true)} variant="accent">
+                <Plus className="h-4 w-4" />
+                New Carousel
+              </Button>
+            </div>
           </div>
+
+          {/* Budget warning banner */}
+          {totalCost >= BUDGET_WARNING_USD && (
+            <div className="mb-6 flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>
+                Total AI cost has reached{" "}
+                <strong className="tabular-nums">
+                  {formatCost(totalCost)}
+                </strong>
+                . Consider reviewing your usage.
+              </span>
+            </div>
+          )}
 
           {/* Tabs */}
           <div className="flex gap-1 mb-6 border-b border-border">
@@ -146,9 +172,22 @@ export default function DashboardPage() {
             >
               Templates
             </button>
+            <button
+              onClick={() => setActiveTab("media")}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
+                activeTab === "media"
+                  ? "border-accent text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <ImageIcon className="h-3.5 w-3.5" />
+              Media
+            </button>
           </div>
 
-          {activeTab === "templates" ? (
+          {activeTab === "media" ? (
+            <MediaLibrary />
+          ) : activeTab === "templates" ? (
             <TemplateGallery />
           ) : loading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -221,11 +260,19 @@ export default function DashboardPage() {
                   <h3 className="font-semibold text-sm group-hover:text-accent transition-colors truncate">
                     {carousel.name}
                   </h3>
-                  <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground flex-wrap">
                     <Badge variant="secondary" className="text-[10px]">
                       <SlidersHorizontal className="h-2.5 w-2.5 mr-1" />
                       {carousel.aspectRatio}
                     </Badge>
+                    {carousel.mode === "meta-ads" && (
+                      <Badge variant="outline" className="text-[10px] border-blue-500/40 text-blue-600 dark:text-blue-400">
+                        Meta Ad
+                      </Badge>
+                    )}
+                    {(carousel.costUsd ?? 0) > 0 && (
+                      <CostBadge costUsd={carousel.costUsd!} />
+                    )}
                     <span className="flex items-center gap-1">
                       <Calendar className="h-3 w-3" />
                       {new Date(carousel.updatedAt).toLocaleDateString()}

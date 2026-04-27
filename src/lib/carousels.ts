@@ -1,9 +1,17 @@
-import { readDataSafe, writeData } from "./data";
+import { readDataSafe, writeData, modifyData } from "./data";
 import { generateId, now } from "./utils";
-import type { Carousel, CarouselsData, Slide, AspectRatio, ReferenceImage } from "@/types/carousel";
+import type { Carousel, CarouselsData, Slide, AspectRatio, ReferenceImage, CarouselMode, CarouselFontSettings } from "@/types/carousel";
 import { MAX_SLIDES, MAX_VERSIONS } from "@/types/carousel";
 
 const FILE = "carousels.json";
+
+// Applies defaults to carousels loaded from disk that predate the meta-ads mode.
+// The intermediate cast silences TS2783 (duplicate key warning) that fires when
+// `mode` is a required field on Carousel and also appears as the default key.
+function applyDefaults(carousel: Carousel): Carousel {
+  const c = carousel as Omit<Carousel, "mode"> & Partial<Pick<Carousel, "mode">>;
+  return { mode: "organic", ...c } as Carousel;
+}
 
 async function load(): Promise<CarouselsData> {
   return readDataSafe<CarouselsData>(FILE, { carousels: [] });
@@ -15,17 +23,19 @@ async function save(data: CarouselsData): Promise<void> {
 
 export async function listCarousels(): Promise<Carousel[]> {
   const data = await load();
-  return data.carousels.filter((c) => !c.isTemplate);
+  return data.carousels.filter((c) => !c.isTemplate).map(applyDefaults);
 }
 
 export async function getCarousel(id: string): Promise<Carousel | null> {
   const data = await load();
-  return data.carousels.find((c) => c.id === id) ?? null;
+  const found = data.carousels.find((c) => c.id === id);
+  return found ? applyDefaults(found) : null;
 }
 
 export async function createCarousel(
   name: string,
-  aspectRatio: AspectRatio
+  aspectRatio: AspectRatio = "4:5",
+  mode: CarouselMode = "organic"
 ): Promise<Carousel> {
   const data = await load();
   const carousel: Carousel = {
@@ -37,6 +47,7 @@ export async function createCarousel(
     chatSessionId: null,
     isTemplate: false,
     tags: [],
+    mode,
     createdAt: now(),
     updatedAt: now(),
   };
@@ -47,20 +58,26 @@ export async function createCarousel(
 
 export async function updateCarousel(
   id: string,
-  updates: Partial<Pick<Carousel, "name" | "aspectRatio" | "tags" | "chatSessionId" | "caption" | "hashtags">>
+  updates: Partial<Pick<Carousel,
+    | "name" | "aspectRatio" | "tags" | "chatSessionId"
+    | "caption" | "hashtags" | "costUsd"
+    | "mode" | "adPrimaryText" | "adCta"
+    | "fontSettings"
+  >>
 ): Promise<Carousel | null> {
   const data = await load();
   const idx = data.carousels.findIndex((c) => c.id === id);
   if (idx === -1) return null;
   Object.assign(data.carousels[idx], updates, { updatedAt: now() });
   await save(data);
-  return data.carousels[idx];
+  return applyDefaults(data.carousels[idx]);
 }
 
 export async function duplicateCarousel(id: string): Promise<Carousel | null> {
   const data = await load();
-  const source = data.carousels.find((c) => c.id === id);
-  if (!source) return null;
+  const rawSource = data.carousels.find((c) => c.id === id);
+  if (!rawSource) return null;
+  const source = applyDefaults(rawSource);
 
   const duplicate: Carousel = {
     ...source,
@@ -80,7 +97,7 @@ export async function duplicateCarousel(id: string): Promise<Carousel | null> {
 
   data.carousels.push(duplicate);
   await save(data);
-  return duplicate;
+  return applyDefaults(duplicate);
 }
 
 export async function deleteCarousel(id: string): Promise<boolean> {
@@ -120,7 +137,7 @@ export async function addSlide(
 export async function updateSlide(
   carouselId: string,
   slideId: string,
-  updates: Partial<Pick<Slide, "html" | "notes">>
+  updates: Partial<Pick<Slide, "html" | "notes" | "adCopy">>
 ): Promise<Slide | null> {
   const data = await load();
   const carousel = data.carousels.find((c) => c.id === carouselId);
@@ -218,6 +235,24 @@ export async function addReferenceImage(
   return image;
 }
 
+export async function updateReferenceImageMeta(
+  carouselId: string,
+  imageId: string,
+  meta: Partial<Pick<ReferenceImage, "description" | "embedding" | "embeddingVocab">>
+): Promise<ReferenceImage | null> {
+  const data = await load();
+  const carousel = data.carousels.find((c) => c.id === carouselId);
+  if (!carousel || !carousel.referenceImages) return null;
+
+  const img = carousel.referenceImages.find((i) => i.id === imageId);
+  if (!img) return null;
+
+  Object.assign(img, meta);
+  carousel.updatedAt = now();
+  await save(data);
+  return img;
+}
+
 export async function removeReferenceImage(
   carouselId: string,
   imageId: string
@@ -233,4 +268,92 @@ export async function removeReferenceImage(
   carousel.updatedAt = now();
   await save(data);
   return true;
+}
+
+// --- Cost tracking ---
+
+export async function addCost(
+  carouselId: string,
+  costUsd: number
+): Promise<boolean> {
+  let found = false;
+  await modifyData<CarouselsData>(FILE, { carousels: [] }, (data) => {
+    const carousel = data.carousels.find((c) => c.id === carouselId);
+    if (!carousel) return data;
+    found = true;
+    carousel.costUsd = (carousel.costUsd ?? 0) + costUsd;
+    carousel.updatedAt = now();
+    return data;
+  });
+  return found;
+}
+
+// --- Media library linking ---
+
+export async function addMediaImageIds(
+  carouselId: string,
+  imageIds: string[]
+): Promise<boolean> {
+  let carouselFound = false;
+  await modifyData<CarouselsData>(FILE, { carousels: [] }, (data) => {
+    const carousel = data.carousels.find((c) => c.id === carouselId);
+    if (!carousel) return data;
+    carouselFound = true;
+
+    const existing = new Set(carousel.mediaImageIds ?? []);
+    for (const id of imageIds) existing.add(id);
+    carousel.mediaImageIds = [...existing];
+    carousel.updatedAt = now();
+    return data;
+  });
+  return carouselFound;
+}
+
+export async function removeMediaImageId(
+  carouselId: string,
+  imageId: string
+): Promise<boolean> {
+  const data = await load();
+  const carousel = data.carousels.find((c) => c.id === carouselId);
+  if (!carousel || !carousel.mediaImageIds) return false;
+
+  const idx = carousel.mediaImageIds.indexOf(imageId);
+  if (idx === -1) return false;
+  carousel.mediaImageIds.splice(idx, 1);
+  carousel.updatedAt = now();
+  await save(data);
+  return true;
+}
+
+// --- Font settings ---
+
+/**
+ * Permanently rewrites every slide's HTML in a carousel using the given
+ * applyFn. Saves the old HTML to previousVersions for undo support.
+ */
+export async function applyFontSettingsToCarousel(
+  carouselId: string,
+  settings: CarouselFontSettings,
+  applyFn: (html: string, settings: CarouselFontSettings) => string
+): Promise<Carousel | null> {
+  const data = await load();
+  const idx = data.carousels.findIndex((c) => c.id === carouselId);
+  if (idx === -1) return null;
+
+  const carousel = data.carousels[idx];
+
+  carousel.slides = carousel.slides.map((slide) => {
+    const newHtml = applyFn(slide.html, settings);
+    if (newHtml === slide.html) return slide;
+    // Push to end — matches the LIFO convention of updateSlide/undoSlide
+    // so undoSlide's pop() retrieves the version just before this apply.
+    const previousVersions = [...slide.previousVersions, slide.html];
+    if (previousVersions.length > MAX_VERSIONS) previousVersions.shift();
+    return { ...slide, html: newHtml, previousVersions };
+  });
+
+  carousel.fontSettings = settings;
+  carousel.updatedAt = now();
+  await save(data);
+  return applyDefaults(carousel);
 }

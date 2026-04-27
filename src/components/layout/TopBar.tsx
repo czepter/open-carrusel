@@ -4,11 +4,13 @@ import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { ArrowLeft, Settings, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CostBadge } from "@/components/ui/cost-badge";
 
 interface TopBarProps {
   title?: string;
   showBack?: boolean;
   editable?: boolean;
+  costUsd?: number;
   onTitleChange?: (newTitle: string) => void;
   onSettingsClick?: () => void;
 }
@@ -17,6 +19,7 @@ export function TopBar({
   title,
   showBack,
   editable,
+  costUsd,
   onTitleChange,
   onSettingsClick,
 }: TopBarProps) {
@@ -79,6 +82,7 @@ export function TopBar({
           </span>
         )}
       </div>
+      {typeof costUsd === "number" && <CostBadge costUsd={costUsd} />}
       <div className="flex-1" />
       {onSettingsClick && (
         <Button

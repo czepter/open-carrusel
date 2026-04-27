@@ -2,12 +2,13 @@
 
 import { useMemo, useRef, useEffect, useState, useCallback } from "react";
 import { wrapSlideHtml } from "@/lib/slide-html";
-import type { AspectRatio } from "@/types/carousel";
+import type { AspectRatio, CarouselFontSettings } from "@/types/carousel";
 import { DIMENSIONS } from "@/types/carousel";
 
 interface SlideRendererProps {
   html: string;
   aspectRatio: AspectRatio;
+  fontSettings?: CarouselFontSettings;
   className?: string;
   style?: React.CSSProperties;
 }
@@ -15,6 +16,7 @@ interface SlideRendererProps {
 export function SlideRenderer({
   html,
   aspectRatio,
+  fontSettings,
   className,
   style,
 }: SlideRendererProps) {
@@ -23,8 +25,8 @@ export function SlideRenderer({
   const { width: slideW, height: slideH } = DIMENSIONS[aspectRatio];
 
   const srcDoc = useMemo(
-    () => wrapSlideHtml(html, aspectRatio),
-    [html, aspectRatio]
+    () => wrapSlideHtml(html, aspectRatio, { fontSettings }),
+    [html, aspectRatio, fontSettings]
   );
 
   const measure = useCallback(() => {
